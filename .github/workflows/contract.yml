@@ -1,0 +1,19 @@
+name: Contract
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  pinned-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify vendored contract files
+        env:
+          BLUEPRINT_REF: v0.1.0
+        run: |
+          test "${BLUEPRINT_REF}" = "$(awk -F': ' '/^tag:/ {print $2}' vendor/blueprint/PINNED_RELEASE)"
+          git clone --depth 1 --branch "${BLUEPRINT_REF}" https://github.com/Kamaal404/ragmen-recipe.git /tmp/ragmen-recipe
+          diff -u /tmp/ragmen-recipe/spec/blueprint.schema.json vendor/blueprint/blueprint.schema.json
+          diff -ru /tmp/ragmen-recipe/spec/test-vectors vendor/blueprint/test-vectors
