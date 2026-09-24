@@ -18,7 +18,7 @@ INVALID_VECTORS = sorted((ROOT / "vendor/blueprint/test-vectors/invalid").glob("
 
 @pytest.mark.parametrize("path", VALID_VECTORS, ids=lambda path: path.stem)
 def test_vendored_valid_vector_loads(path: Path) -> None:
-    assert load(path, SCHEMA)["name"] == "sample"
+    assert load(path, SCHEMA)["name"] == ("firecraft" if path.stem == "firecraft" else "sample")
 
 
 @pytest.mark.parametrize("path", INVALID_VECTORS, ids=lambda path: path.stem)
