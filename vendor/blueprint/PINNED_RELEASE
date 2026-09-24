@@ -1,6 +1,6 @@
 repository: https://github.com/Kamaal404/ragmen-recipe
-tag: v0.1.0
+tag: v0.1.1
 schema: spec/blueprint.schema.json
 vectors: spec/test-vectors
 schema_sha256: 817d389243bd0e71edf78c6903943fe4866298fa2830bed7b0c3546e0e604f2a
-valid_vector_sha256: 3edd478b427ee3af2b49af66f389bf5e71e86e6718a94ab74ae6e25e1c7108a1
+valid_vector_sha256: 6739d01a695ecfeeb43e1baeed369639b0814ba3da4843803dacf1935e9a7cb2

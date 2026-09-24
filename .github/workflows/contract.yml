@@ -11,7 +11,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Verify vendored contract files
         env:
-          BLUEPRINT_REF: v0.1.0
+          BLUEPRINT_REF: v0.1.1
         run: |
           test "${BLUEPRINT_REF}" = "$(awk -F': ' '/^tag:/ {print $2}' vendor/blueprint/PINNED_RELEASE)"
           git clone --depth 1 --branch "${BLUEPRINT_REF}" https://github.com/Kamaal404/ragmen-recipe.git /tmp/ragmen-recipe
