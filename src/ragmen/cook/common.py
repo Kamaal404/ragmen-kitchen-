@@ -9,7 +9,7 @@ from typing import Any
 import yaml
 
 PROFILE_DIRS = [
-    Path(__file__).resolve().parent.parent / "profiles",
+    Path(__file__).resolve().parent / "profiles",
     Path.cwd() / "profiles",
 ]
 

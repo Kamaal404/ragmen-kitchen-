@@ -36,7 +36,7 @@ expect() {   # expect <name> <expected> <actual>
 }
 
 echo "profiles parse and declare a closed schema"
-for p in profiles/*.yaml; do
+for p in src/ragmen/cook/profiles/*.yaml; do
   check "$(basename "$p")" "$PY" - "$p" <<'EOF'
 import sys, yaml
 d = yaml.safe_load(open(sys.argv[1]))
@@ -58,9 +58,9 @@ done
 echo
 echo "PDF pipeline"
 check "diagnose detects a text layer" \
-  "$PY" scripts/extract_pdf.py --input samples/legal/code_travail_sample.pdf --out "$WORK/d" --diagnose-only
+  "$PY" src/ragmen/cook/extract_pdf.py --input samples/legal/code_travail_sample.pdf --out "$WORK/d" --diagnose-only
 
-"$PY" scripts/extract_pdf.py --input samples/legal/code_travail_sample.pdf --out "$WORK/x" >/dev/null 2>&1
+"$PY" src/ragmen/cook/extract_pdf.py --input samples/legal/code_travail_sample.pdf --out "$WORK/x" >/dev/null 2>&1
 check "extraction writes text" test -s "$WORK/x/code_travail_sample.txt"
 check "extraction writes a page map" test -s "$WORK/x/code_travail_sample.pages.json"
 
@@ -76,7 +76,7 @@ echo
 echo "segmentation, all three PDF engines agree"
 for engine in poppler pdfplumber pypdf; do
   rm -rf "$WORK/cache"
-  if ! "$PY" scripts/segment.py --profile legal \
+  if ! "$PY" src/ragmen/cook/segment.py --profile legal \
         --input samples/legal/code_travail_sample.pdf \
         --out "$WORK/c-$engine.jsonl" --pdf-cache "$WORK/cache" \
         --pdf-engine "$engine" >/dev/null 2>&1; then
@@ -106,11 +106,11 @@ expect "typed and deduped" "12:EXCEPTION_TO:2,13:REFERS_TO:12,14:AMENDS:12" "$si
 
 echo
 echo "plain text and markdown still work"
-"$PY" scripts/segment.py --profile legal --input samples/legal/code_travail_sample.txt \
+"$PY" src/ragmen/cook/segment.py --profile legal --input samples/legal/code_travail_sample.txt \
   --out "$WORK/t.jsonl" --pdf-cache "$WORK/cache2" >/dev/null 2>&1
 expect "text corpus chunks" "5" "$(wc -l < "$WORK/t.jsonl" | tr -d ' ')"
 
-"$PY" scripts/segment.py --profile recipes --input samples/recipes \
+"$PY" src/ragmen/cook/segment.py --profile recipes --input samples/recipes \
   --out "$WORK/r.jsonl" --pdf-cache "$WORK/cache3" >/dev/null 2>&1
 expect "recipe corpus chunks" "2" "$(wc -l < "$WORK/r.jsonl" | tr -d ' ')"
 check "recipe title captured" grep -q '"title": "Lemon Garlic Pasta"' "$WORK/r.jsonl"
