@@ -2,12 +2,13 @@
 # Offline smoke test.
 #
 # Covers every stage that needs neither an LLM key nor a running database:
-# PDF diagnosis, PDF extraction, page mapping, segmentation, cross-reference
-# resolution, and profile validity. If this passes, the deterministic half of
-# the pipeline is healthy and any later failure is an LLM, schema, or Neo4j
-# problem rather than a parsing one.
+# segmentation of plain text and markdown, cross-reference typing, and profile
+# validity. PDF checks run only when you point PDF at a document you own:
 #
-#   ./tests/smoke_test.sh
+#   PDF=/path/to/your.pdf ./tests/test_legacy_pipeline.sh
+#
+# No corpus is shipped with this repository, so every text fixture below is
+# generated inside the temporary work directory.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -56,65 +57,88 @@ EOF
 done
 
 echo
-echo "PDF pipeline"
-check "diagnose detects a text layer" \
-  "$PY" src/ragmen/cook/extract_pdf.py --input samples/legal/code_travail_sample.pdf --out "$WORK/d" --diagnose-only
+echo "legal text: article segmentation and cross-reference typing"
+mkdir -p "$WORK/legal"
+cat > "$WORK/legal/code.txt" <<'EOF'
+TITRE I - DISPOSITIONS GENERALES
 
-"$PY" src/ragmen/cook/extract_pdf.py --input samples/legal/code_travail_sample.pdf --out "$WORK/x" >/dev/null 2>&1
-check "extraction writes text" test -s "$WORK/x/code_travail_sample.txt"
-check "extraction writes a page map" test -s "$WORK/x/code_travail_sample.pages.json"
+CHAPITRE 1 - Champ d'application
 
-check "running header removed" bash -c \
-  "! grep -q 'BULLETIN OFFICIEL' '$WORK/x/code_travail_sample.txt'"
-check "running footer removed" bash -c \
-  "! grep -q 'Page 1 sur 3' '$WORK/x/code_travail_sample.txt'"
-check "hyphenation rejoined" grep -q 'relations de travail' "$WORK/x/code_travail_sample.txt"
-check "soft wrap rejoined" grep -q "prevue a l'article 12 est puni" "$WORK/x/code_travail_sample.txt"
-check "headings survived" grep -q '^Article 12' "$WORK/x/code_travail_sample.txt"
+Article 1
+Le present code s'applique aux relations de travail.
 
-echo
-echo "segmentation, all three PDF engines agree"
-for engine in poppler pdfplumber pypdf; do
-  rm -rf "$WORK/cache"
-  if ! "$PY" src/ragmen/cook/segment.py --profile legal \
-        --input samples/legal/code_travail_sample.pdf \
-        --out "$WORK/c-$engine.jsonl" --pdf-cache "$WORK/cache" \
-        --pdf-engine "$engine" >/dev/null 2>&1; then
-    printf '  \033[31mFAIL\033[0m %s segmentation errored\n' "$engine"; fail=$((fail+1)); continue
-  fi
-  sig=$("$PY" - "$WORK/c-$engine.jsonl" <<'EOF'
-import json, sys
-rows = [json.loads(l) for l in open(sys.argv[1])]
-print(" ".join(f"a{r['number']}p{r.get('page')}" for r in rows),
-      sum(len(r["xrefs"]) for r in rows))
+Article 2
+Les dispositions sont d'ordre public.
+
+Article 3
+Toute infraction a l'article 2 est punie.
 EOF
-)
-  expect "$engine" "a1p1 a2p1 a12p2 a13p2 a14p3 3" "$sig"
-done
+"$PY" src/ragmen/cook/segment.py --profile legal --input "$WORK/legal/code.txt" \
+  --out "$WORK/legal.jsonl" --pdf-cache "$WORK/cache-text" >/dev/null 2>&1
+expect "one chunk per article" "1 2 3" \
+  "$("$PY" -c "import json,sys; print(' '.join(json.loads(l)['number'] for l in open(sys.argv[1])))" "$WORK/legal.jsonl")"
+expect "article 3 refers to article 2 once" "1" \
+  "$("$PY" -c "import json,sys; rows=[json.loads(l) for l in open(sys.argv[1])]; print(sum(1 for r in rows if r['number']=='3' for x in r['xrefs'] if x['raw']=='2'))" "$WORK/legal.jsonl")"
+expect "no chunk references itself" "0" \
+  "$("$PY" -c "import json,sys; rows=[json.loads(l) for l in open(sys.argv[1])]; print(sum(1 for r in rows for x in r['xrefs'] if x['raw']==r['number']))" "$WORK/legal.jsonl")"
 
 echo
-echo "cross-reference typing"
-sig=$("$PY" - "$WORK/c-poppler.jsonl" <<'EOF'
-import json, sys
-rows = [json.loads(l) for l in open(sys.argv[1])]
-print(",".join(f"{r['number']}:{x['relation']}:{x['raw']}" for r in rows for x in r["xrefs"]))
+echo "recipes: title capture and cross-reference resolution"
+mkdir -p "$WORK/recipes"
+cat > "$WORK/recipes/weeknight.md" <<'EOF'
+# Weeknight
+
+## Lemon Garlic Pasta
+
+### Ingredients
+- pasta
+- lemon
+
+### Instructions
+Boil the pasta. See "Garlic Bread" for a side.
+
+## Garlic Bread
+
+### Ingredients
+- bread
 EOF
-)
-# The specific relation must win over the generic one on the same target, and a
-# chunk must never reference itself.
-expect "typed and deduped" "12:EXCEPTION_TO:2,13:REFERS_TO:12,14:AMENDS:12" "$sig"
-
-echo
-echo "plain text and markdown still work"
-"$PY" src/ragmen/cook/segment.py --profile legal --input samples/legal/code_travail_sample.txt \
-  --out "$WORK/t.jsonl" --pdf-cache "$WORK/cache2" >/dev/null 2>&1
-expect "text corpus chunks" "5" "$(wc -l < "$WORK/t.jsonl" | tr -d ' ')"
-
-"$PY" src/ragmen/cook/segment.py --profile recipes --input samples/recipes \
-  --out "$WORK/r.jsonl" --pdf-cache "$WORK/cache3" >/dev/null 2>&1
+"$PY" src/ragmen/cook/segment.py --profile recipes --input "$WORK/recipes" \
+  --out "$WORK/r.jsonl" --pdf-cache "$WORK/cache-recipes" >/dev/null 2>&1
 expect "recipe corpus chunks" "2" "$(wc -l < "$WORK/r.jsonl" | tr -d ' ')"
 check "recipe title captured" grep -q '"title": "Lemon Garlic Pasta"' "$WORK/r.jsonl"
 check "recipe cross-ref resolved" grep -q 'PAIRS_WITH' "$WORK/r.jsonl"
+
+if [ -n "${PDF:-}" ]; then
+  echo
+  echo "PDF pipeline ($PDF)"
+  [ -f "$PDF" ] || { echo "  PDF not found: $PDF"; exit 2; }
+  check "diagnose detects a text layer" \
+    "$PY" src/ragmen/cook/extract_pdf.py --input "$PDF" --out "$WORK/d" --diagnose-only
+  "$PY" src/ragmen/cook/extract_pdf.py --input "$PDF" --out "$WORK/x" >/dev/null 2>&1
+  check "extraction writes text" bash -c "ls '$WORK/x'/*.txt >/dev/null 2>&1"
+  check "extraction writes a page map" bash -c "ls '$WORK/x'/*.pages.json >/dev/null 2>&1"
+
+  echo
+  echo "segmentation, all three PDF engines agree"
+  sigs=()
+  for engine in poppler pdfplumber pypdf; do
+    rm -rf "$WORK/cache"
+    if ! "$PY" src/ragmen/cook/segment.py --profile legal --input "$PDF" \
+          --out "$WORK/c-$engine.jsonl" --pdf-cache "$WORK/cache" \
+          --pdf-engine "$engine" >/dev/null 2>&1; then
+      printf '  \033[31mFAIL\033[0m %s segmentation errored\n' "$engine"; fail=$((fail+1)); continue
+    fi
+    sig=$("$PY" -c "import json,sys; rows=[json.loads(l) for l in open(sys.argv[1])]; print(' '.join(f\"{r['number']}@{r.get('page')}\" for r in rows))" "$WORK/c-$engine.jsonl")
+    sigs+=("$sig")
+    printf '  \033[32mPASS\033[0m %s produced %s chunks\n' "$engine" "$(wc -l < "$WORK/c-$engine.jsonl" | tr -d ' ')"; pass=$((pass+1))
+  done
+  if [ "${#sigs[@]}" -gt 0 ]; then
+    for s in "${sigs[@]}"; do expect "engine output matches" "${sigs[0]}" "$s"; done
+  fi
+else
+  echo
+  echo "PDF checks skipped. Set PDF=/path/to/your.pdf to run them."
+fi
 
 echo
 printf '%d passed, %d failed\n' "$pass" "$fail"

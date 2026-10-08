@@ -84,7 +84,7 @@ Next steps:
 
   source .venv/bin/activate
   make init                                  # constraints + indexes
-  make segment PROFILE=legal INPUT=./samples/legal
+  make segment PROFILE=legal INPUT=./your-corpus
   make dry     PROFILE=legal                 # needs an LLM key
   make load    PROFILE=legal
   make validate PROFILE=legal

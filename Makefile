@@ -2,7 +2,8 @@
 SHELL := /bin/bash
 
 PROFILE ?= legal
-INPUT   ?= ./samples/legal
+# No default corpus ships with this repository. Point INPUT at documents you own.
+INPUT   ?=
 CHUNKS  ?= chunks.jsonl
 GRAPH   ?= graph.jsonl
 LIMIT   ?= 10
@@ -28,14 +29,14 @@ help:
 	@echo "  make reset                       wipe the database volume"
 	@echo ""
 	@echo "  make extract  INPUT=./pdfs       PDFs -> clean text (optional, segment does it)"
-	@echo "  make segment  PROFILE=legal INPUT=./samples/legal"
+	@echo "  make segment  PROFILE=legal INPUT=./your-corpus"
 	@echo "  make dry      PROFILE=legal LIMIT=10      extraction preview, writes no DB"
 	@echo "  make init     PROFILE=legal               constraints + indexes"
 	@echo "  make load     PROFILE=legal               write to Neo4j + resolve"
 	@echo "  make validate PROFILE=legal"
 	@echo "  make query    PROFILE=legal Q='...'"
 	@echo ""
-	@echo "  make all      PROFILE=legal INPUT=./samples/legal"
+	@echo "  make all      PROFILE=legal INPUT=./your-corpus"
 	@echo ""
 	@echo "current: PROFILE=$(PROFILE) INPUT=$(INPUT) PY=$(PY)"
 
@@ -62,28 +63,32 @@ shell:
 reset:
 	docker compose down -v && docker compose up -d
 
+require_input = @test -n "$(INPUT)" || { echo "set INPUT=/path/to/your/corpus"; exit 2; }
+
 extract:
-	$(PY) scripts/extract_pdf.py --input $(INPUT) --out ./corpus
+	$(require_input)
+	$(PY) src/ragmen/cook/extract_pdf.py --input $(INPUT) --out ./corpus
 
 segment:
-	$(PY) scripts/segment.py --profile $(PROFILE) --input $(INPUT) --out $(CHUNKS)
+	$(require_input)
+	$(PY) src/ragmen/cook/segment.py --profile $(PROFILE) --input $(INPUT) --out $(CHUNKS)
 
 dry:
-	@$(load_env) $(PY) scripts/build_graph.py --profile $(PROFILE) \
+	@$(load_env) $(PY) src/ragmen/cook/build_graph.py --profile $(PROFILE) \
 		--chunks $(CHUNKS) --dry-run --out $(GRAPH) --limit $(LIMIT)
 
 init:
-	@$(load_env) $(PY) scripts/init_db.py --profile $(PROFILE)
+	@$(load_env) $(PY) src/ragmen/cook/init_db.py --profile $(PROFILE)
 
 load:
-	@$(load_env) $(PY) scripts/build_graph.py --profile $(PROFILE) \
+	@$(load_env) $(PY) src/ragmen/cook/build_graph.py --profile $(PROFILE) \
 		--chunks $(CHUNKS) --write
 
 validate:
-	@$(load_env) $(PY) scripts/validate.py --profile $(PROFILE)
+	@$(load_env) $(PY) src/ragmen/cook/validate.py --profile $(PROFILE)
 
 query:
-	@$(load_env) $(PY) scripts/query.py --profile $(PROFILE) --q "$(Q)" --top-k $(TOPK)
+	@$(load_env) $(PY) src/ragmen/cook/query.py --profile $(PROFILE) --q "$(Q)" --top-k $(TOPK)
 
 # Stops after the dry run on purpose. Inspect the extraction before paying to
 # load it; that review is the whole point of the two-phase design.

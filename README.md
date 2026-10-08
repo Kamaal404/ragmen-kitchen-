@@ -54,8 +54,7 @@ a check before the next step runs.
 
 This repository ships no corpus. Bring your own documents:
 
-1. Put your files in a folder outside the repository, or in `samples/` locally
-   and keep them untracked.
+1. Put your files in a folder outside the repository and pass it as `INPUT`.
 2. Run the design-time skill on a sample and approve the blueprint.
 3. Run `ragmen cook` against your full corpus.
 
