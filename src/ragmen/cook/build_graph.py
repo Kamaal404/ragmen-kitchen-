@@ -21,6 +21,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ragmen.registry.checkpoint import Checkpoint, run_pending  # noqa: E402
 from common import (  # noqa: E402
     build_embedder,
     check_embedder_dims,
@@ -59,6 +60,14 @@ def make_jsonl_writer(path: str):
             return KGWriterModel(status="SUCCESS")
 
     return _Writer(path)
+
+
+def profile_hash(profile_name: str) -> str:
+    # Extraction output depends on the profile text, so the checkpoint must
+    # invalidate when the profile changes, not only when the chunks do.
+    import hashlib
+
+    return "sha256:" + hashlib.sha256(json.dumps(load_profile(profile_name), sort_keys=True).encode("utf-8")).hexdigest()
 
 
 def load_chunks(path: str, limit: int = 0) -> list[dict]:
@@ -125,27 +134,37 @@ async def build(args) -> None:
         **kwargs,
     )
 
-    ok, failed = 0, 0
-    for i, c in enumerate(chunks, 1):
-        try:
-            await pipeline.run_async(
-                text=c["text"],
-                document_metadata={
-                    "chunk_id": c["id"],
-                    "doc_id": c["doc_id"],
-                    "path": c["path"],
-                    "char_start": c["char_start"],
-                    "char_end": c["char_end"],
-                },
-            )
-            ok += 1
-        except Exception as e:  # noqa: BLE001
-            failed += 1
-            print(f"  chunk {c['id']} failed: {type(e).__name__}: {e}", file=sys.stderr)
-            if args.strict:
-                raise
-        if i % 10 == 0 or i == len(chunks):
-            print(f"  {i}/{len(chunks)} chunks  ({ok} ok, {failed} failed)")
+    async def process(c: dict) -> None:
+        await pipeline.run_async(
+            text=c["text"],
+            document_metadata={
+                "chunk_id": c["id"],
+                "doc_id": c["doc_id"],
+                "path": c["path"],
+                "char_start": c["char_start"],
+                "char_end": c["char_end"],
+            },
+        )
+
+    if args.state and not args.dry_run:
+        checkpoint = Checkpoint(Path(args.state), profile_hash=profile_hash(args.profile))
+        pending = len(checkpoint.plan(chunks))
+        print(f"resuming: {pending} of {len(chunks)} chunks pending")
+        outcome = await run_pending(checkpoint, chunks, process)
+        checkpoint.close()
+    else:
+        outcome = {"ok": 0, "failed": 0}
+        for c in chunks:
+            try:
+                await process(c)
+                outcome["ok"] += 1
+            except Exception as e:  # noqa: BLE001
+                outcome["failed"] += 1
+                print(f"  chunk {c['id']} failed: {type(e).__name__}: {e}", file=sys.stderr)
+                if args.strict:
+                    raise
+    ok, failed = outcome["ok"], outcome["failed"]
+    print(f"  {ok} ok, {failed} failed")
 
     if args.dry_run:
         summarize_dry_run(args.out)
@@ -259,6 +278,10 @@ def main() -> None:
     ap.add_argument("--out", default="graph.jsonl")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--strict", action="store_true", help="fail on first bad chunk")
+    ap.add_argument(
+        "--state",
+        help="checkpoint database; a re-run skips chunks already extracted under this profile",
+    )
     args = ap.parse_args()
 
     if args.dry_run == args.write:
