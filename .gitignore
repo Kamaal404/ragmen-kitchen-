@@ -8,3 +8,4 @@ out/
 neo4j-data/
 # Neo4j plugin jars (APOC) are local, large binaries mounted by docker-compose.
 plugins/
+*.egg-info/
