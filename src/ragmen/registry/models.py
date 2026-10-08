@@ -18,6 +18,13 @@ class Source:
 
 
 @dataclass(frozen=True)
+class RetractResult:
+    source_id: str
+    removed_chunks: int
+    removed_entities: list[str]
+
+
+@dataclass(frozen=True)
 class AddResult:
     source_id: str
     action: AddAction
