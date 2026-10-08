@@ -8,7 +8,7 @@ server. The plugin is intentionally deferred until the runtime interfaces are
 stable.
 
 The design-time skill is maintained separately at
-`Kamaal404/ragmen-recipe`. Runtime refuses blueprints that are missing,
+`Kamaal404/ragmen-recipe`. This repository and the skill are linked: the skill emits approved blueprints that this runtime consumes. Runtime refuses blueprints that are missing,
 schema-invalid, incorrectly hashed, unapproved, unsupported, or incompatible
 with the configured embedding dimensions.
 
