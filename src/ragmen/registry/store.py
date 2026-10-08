@@ -123,6 +123,18 @@ class Registry:
         self._db.execute("UPDATE sources SET chunk_count = ? WHERE source_id = ?", (count, source_id))
         self._db.commit()
 
+    def replace_chunks(self, source_id: str, chunks: list[tuple[str, str]]) -> None:
+        # Chunks are keyed by content, so anything not in the new set is stale
+        # text from a previous version of the file and must go.
+        self.get(source_id)
+        keep = {chunk_id(source_id, path, text) for path, text in chunks}
+        stale = [row["chunk_id"] for row in self._db.execute(
+            "SELECT chunk_id FROM chunks WHERE source_id = ?", (source_id,)
+        ).fetchall() if row["chunk_id"] not in keep]
+        self._db.executemany("DELETE FROM chunks WHERE chunk_id = ?", [(c,) for c in stale])
+        self._db.commit()
+        self.add_chunks(source_id, chunks)
+
     def chunks_for(self, source_id: str) -> list[tuple[str, str, str]]:
         rows = self._db.execute(
             "SELECT chunk_id, path, text FROM chunks WHERE source_id = ? ORDER BY chunk_id",

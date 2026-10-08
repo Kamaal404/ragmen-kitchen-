@@ -30,12 +30,15 @@ class Ledger:
 
     def start(self, source_id: str) -> str:
         source = self._db.execute(
-            "SELECT content_hash FROM sources WHERE source_id = ?", (source_id,)
+            "SELECT content_hash, blueprint_hash FROM sources WHERE source_id = ?", (source_id,)
         ).fetchone()
         if source is None:
             raise KeyError(source_id)
         content_hash = source["content_hash"]
-        job_id = "job_" + hashlib.sha256(f"{source_id}\x1f{content_hash}".encode("utf-8")).hexdigest()[:16]
+        # A blueprint change must start a new job, or chunks extracted under the
+        # old ontology would be reported as done under the new one.
+        key = f"{source_id}\x1f{content_hash}\x1f{source['blueprint_hash']}"
+        job_id = "job_" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
         self._db.execute(
             "INSERT OR IGNORE INTO jobs (job_id, source_id, content_hash) VALUES (?, ?, ?)",
             (job_id, source_id, content_hash),
