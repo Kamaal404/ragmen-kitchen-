@@ -57,3 +57,17 @@ class Checkpoint:
             (status, reason, chunk_id, self._profile_hash),
         )
         self._db.commit()
+
+
+async def run_pending(checkpoint: Checkpoint, chunks: list[dict], process) -> dict[str, int]:
+    outcome = {"ok": 0, "failed": 0}
+    for chunk in checkpoint.plan(chunks):
+        try:
+            await process(chunk)
+        except Exception as error:  # noqa: BLE001 - one bad chunk must not stop the run
+            checkpoint.mark_failed(chunk, reason=f"{type(error).__name__}: {error}")
+            outcome["failed"] += 1
+            continue
+        checkpoint.mark_done(chunk)
+        outcome["ok"] += 1
+    return outcome
