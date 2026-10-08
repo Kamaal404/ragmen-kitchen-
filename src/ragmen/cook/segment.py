@@ -20,8 +20,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import load_profile  # noqa: E402
+from ragmen.loaders.html import html_to_text
 
 TEXT_SUFFIXES = {".txt", ".md", ".markdown", ".rst"}
+HTML_SUFFIXES = {".html", ".htm"}
 
 
 def stable_id(*parts: str) -> str:
@@ -100,18 +102,22 @@ def page_for_offset(page_map: list[dict], offset: int) -> int | None:
 
 def read_documents(input_path: Path) -> list[tuple[str, str]]:
     """Return (doc_id, text) pairs. PDFs are converted upstream by ensure_text()."""
+    supported = TEXT_SUFFIXES | HTML_SUFFIXES
     if input_path.is_file():
         files = [input_path]
     else:
-        files = sorted(p for p in input_path.rglob("*") if p.suffix.lower() in TEXT_SUFFIXES)
+        files = sorted(p for p in input_path.rglob("*") if p.suffix.lower() in supported)
     if not files:
         sys.exit(
-            f"no .txt/.md/.pdf files under {input_path}. "
+            f"no .txt/.md/.html/.pdf files under {input_path}. "
             "If these are scanned PDFs, OCR them first (see scripts/extract_pdf.py)."
         )
     out = []
     for f in files:
-        out.append((str(f), f.read_text(encoding="utf-8", errors="replace")))
+        raw = f.read_text(encoding="utf-8", errors="replace")
+        if f.suffix.lower() in HTML_SUFFIXES:
+            raw = html_to_text(raw)
+        out.append((str(f), raw))
     return out
 
 
