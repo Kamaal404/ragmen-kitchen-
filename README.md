@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/ragmen-kitchen.png" alt="RAGmen Kitchen" width="200"/>
+<img src="assets/ragmen-kitchen.png" alt="RAGmen Kitchen" width="280"/>
 
 # RAGmen Kitchen
 
@@ -57,7 +57,7 @@ flowchart LR
 Read it left to right. Each arrow is a handoff that can fail, and each one has a check before the next step runs.
 
 <div align="center">
-<img src="assets/ragmen-kitchen.png" alt="cook" width="160"/>
+<img src="assets/ragmen-kitchen.png" alt="cook" width="140"/>
 </div>
 
 ## Quickstart
