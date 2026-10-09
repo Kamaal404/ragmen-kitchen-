@@ -1,22 +1,37 @@
-# ragmen-kitchen
+<div align="center">
 
-Build and query runtime for approved GraphRAG blueprints.
+<img src="assets/ragmen-kitchen.png" alt="RAGmen Kitchen" width="200"/>
 
-This repository contains the `core`, `cook`, and `serve` packages under
-`src/ragmen`. Cook is the build-time CLI; Serve will be the read-only MCP
-server. The plugin is intentionally deferred until the runtime interfaces are
-stable.
+# RAGmen Kitchen
 
-The design-time skill is maintained separately at
-`Kamaal404/ragmen-recipe`. This repository and the skill are linked: the skill emits approved blueprints that this runtime consumes. Runtime refuses blueprints that are missing,
-schema-invalid, incorrectly hashed, unapproved, unsupported, or incompatible
-with the configured embedding dimensions.
+**Noodles are nodes. Instant GraphRAG without the long cooking.**
 
-Neo4j Community has one database per instance. Runtime stores one active
-blueprint record on `(:_RagmenMeta)` with `blueprint_hash`,
-`blueprint_version`, and approval fields. Ontology or embedding changes
-require a new Neo4j instance or an explicit migration command; mixed graphs
-are not allowed.
+Build and query runtime for approved GraphRAG blueprints. Cook is the build-time CLI; Serve will be the read-only MCP server.
+
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](https://python.org)
+[![Neo4j](https://img.shields.io/badge/neo4j-2026.07-green)](https://neo4j.com)
+[![MCP](https://img.shields.io/badge/MCP-read--only-orange)](https://modelcontextprotocol.io)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
+[![Contract](https://github.com/Kamaal404/ragmen-kitchen-/actions/workflows/contract.yml/badge.svg)](https://github.com/Kamaal404/ragmen-kitchen-/actions/workflows/contract.yml)
+
+Sister repo: [ragmen-recipe](https://github.com/Kamaal404/ragmen-recipe) designs and signs off the blueprints that Kitchen cooks.
+
+</div>
+
+## Why
+
+Plain RAG returns chunks. GraphRAG returns relationships. But schema design is the slow, painful part that most projects get wrong: you pick types and relations by intuition, build the graph, and discover weeks later that the ontology does not answer real questions. RAGmen splits the work. Recipe reads a sample of your corpus, proposes an ontology with justification, and makes you approve it before any extraction spend. Kitchen then executes that approved blueprint deterministically: chunk, extract, embed, load. No ontology drift, no guessing, no expensive mistakes hidden until query time.
+
+## The menu
+
+| Kitchen term | What it does | Status |
+|---|---|---|
+| **recipe** | Design and sign off a blueprint from a corpus sample | 🟢 working (in ragmen-recipe) |
+| **toss** | Validate blueprint schema, hash, and approval | 🟡 partial |
+| **cook** | Chunk, extract, embed, load into Neo4j | 🟡 partial |
+| **simmer** | Entity resolution, incremental updates, drift reporting | ⚪ planned |
+| **taste** | Golden-set evaluation with recall@k in CI | ⚪ planned |
+| **serve** | Read-only MCP server with hybrid retrieval and citations | ⚪ planned |
 
 ## How it fits together
 
@@ -39,16 +54,51 @@ flowchart LR
     serve -->|cited answers| agent
 ```
 
-Read it left to right. Each arrow is a handoff that can fail, and each one has
-a check before the next step runs.
+Read it left to right. Each arrow is a handoff that can fail, and each one has a check before the next step runs.
 
-| Step | Command | Status | What it does |
-|---|---|---|---|
-| 1. Design | `ragmen recipe` (skill: `bp-new`) | planned | Reads a sample of your corpus and proposes a blueprint for you to approve |
-| 2. Validate | `ragmen toss` | planned | Checks the blueprint schema, hash, and approval |
-| 3. Build | `ragmen cook` | scripts exist, CLI stub | Chunks, extracts, embeds, and loads into Neo4j |
-| 4. Query | `ragmen serve` | planned | Read-only retrieval over MCP |
-| Tune | `ragmen taste` / `ragmen simmer` | planned | Evaluate retrieval quality; re-run after blueprint changes |
+<div align="center">
+<img src="assets/ragmen-kitchen.png" alt="cook" width="160"/>
+</div>
+
+## Quickstart
+
+```bash
+# VPS bootstrap (one time)
+chmod +x setup.sh && ./setup.sh
+
+# Or manually
+pip install -r requirements.txt
+docker compose up -d
+cp .env.example .env   # then add your API keys
+
+# Run the offline test suite
+make test
+```
+
+The Makefile wraps every pipeline stage:
+
+```bash
+make segment PROFILE=legal INPUT=./your-corpus
+make dry     PROFILE=legal LIMIT=10     # inspect graph.jsonl before paying to load
+make init    PROFILE=legal
+make load    PROFILE=legal
+make validate PROFILE=legal
+make query   PROFILE=legal Q="obligations of the employer"
+```
+
+`make help` lists every target. The `ragmen` CLI is a stub that prints "not implemented" -- use the Makefile or call `src/ragmen/cook/` scripts directly for now.
+
+## Guardrails
+
+Kitchen enforces the blueprint contract strictly. It will refuse a blueprint that is:
+
+- Missing required fields
+- Schema-invalid against `spec/blueprint.schema.json`
+- Unapproved (no human sign-off recorded)
+- Wrongly hashed (content hash does not match)
+- Incompatible with the configured embedding dimensions
+
+One active blueprint per Neo4j instance. The active hash is stored on a `(:_RagmenMeta)` node with `blueprint_hash`, `blueprint_version`, and approval fields. Mixed-graph scenarios (two blueprints in one database) are not supported. Ontology or embedding changes require a new Neo4j instance or an explicit migration command.
 
 ## Using your own content
 
@@ -56,29 +106,38 @@ This repository ships no corpus. Bring your own documents:
 
 1. Put your files in a folder outside the repository and pass it as `INPUT`.
 2. Run the design-time skill on a sample and approve the blueprint.
-3. Run `ragmen cook` against your full corpus.
+3. Run `make segment` and `make load` against your full corpus.
 
-Do not commit source documents, API keys, or Neo4j data. The bundled test
-fixtures are hand-written and exist only to test the pipeline.
+Do not commit source documents, API keys, or Neo4j data. The bundled test fixtures are hand-written and exist only to test the pipeline.
 
-## Features still to build
+## Roadmap
 
-- [ ] `ragmen` CLI subcommands (currently a stub that prints "not implemented")
-- [ ] Source registry with content hashing, so re-adding a file is a no-op
-- [ ] Retraction that removes one source's chunks and keeps entities other sources share
-- [ ] Resumable ingestion from a per-chunk job ledger
+- [x] Source registry with content hashing, so re-adding a file is a no-op
+- [x] Retraction that removes one source's chunks and keeps entities other sources share
+- [x] Resumable ingestion from a per-chunk job ledger
+- [x] Embedding cache keyed by model and text
+- [ ] `ragmen` CLI subcommands (currently a stub)
 - [ ] Prompt caching for the blueprint block sent with every chunk
 - [ ] Batch extraction mode for cheaper, non-urgent runs
-- [ ] Embedding cache keyed by content hash
 - [ ] Read-only MCP server (`serve`) with hybrid search and citations
 - [ ] Golden-set evaluation (`taste`) with recall@k in CI
 - [ ] Drift report that flags when the blueprint no longer fits the corpus
 - [ ] Multi-source conflict handling (show both sides with attribution)
 
-The migrated ingestion files under `src/ragmen/cook` originate from commit
-`948b4e4` of the former `graphrag-builder` repository. The Fire Graph material
-is an integration-test fixture, not a product.
+The migrated ingestion files under `src/ragmen/cook` originate from commit `948b4e4` of the former `graphrag-builder` repository. The Fire Graph material is an integration-test fixture, not a product.
 
-```powershell
+## Tests
+
+```bash
+# Offline smoke test (no LLM, no database)
+./tests/test_legacy_pipeline.sh
+
+# Pytest suite
 python -m pytest -q
 ```
+
+Both suites run offline with no API key or Neo4j database.
+
+## License
+
+MIT.
