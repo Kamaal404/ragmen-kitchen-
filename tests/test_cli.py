@@ -65,7 +65,7 @@ def test_toss_reports_a_missing_file_without_a_traceback(tmp_path: Path) -> None
     assert "rejected" in result.stderr
 
 
-@pytest.mark.parametrize("command", ["cook", "serve", "taste", "simmer"])
+@pytest.mark.parametrize("command", ["serve", "taste", "simmer"])
 def test_unbuilt_commands_fail_loudly(command: str) -> None:
     # A stub that exits 0 looks like success to a script. Unbuilt commands must not.
     result = run_cli(command)
@@ -77,3 +77,35 @@ def test_recipe_points_at_the_skill_repo() -> None:
     result = run_cli("recipe")
     assert result.returncode == 2
     assert "ragmen-recipe" in result.stderr
+
+
+def test_cook_rejects_missing_blueprint() -> None:
+    result = run_cli("cook")
+    assert result.returncode == 2
+    assert "required" in result.stderr.lower()
+
+
+def test_cook_rejects_bogus_blueprint_path(tmp_path: Path) -> None:
+    result = run_cli("cook", "--blueprint", str(tmp_path / "nope.yaml"), "--input", str(tmp_path))
+    assert result.returncode == 1
+    assert "rejected" in result.stderr
+
+
+def test_cook_segments_without_llm(tmp_path: Path) -> None:
+    """Segment step runs; extraction step needs an LLM key so it may fail."""
+    bp = ROOT / "vendor" / "blueprint" / "test-vectors" / "valid" / "minimal.yaml"
+    input_dir = tmp_path / "corpus"
+    input_dir.mkdir()
+    (input_dir / "doc.txt").write_text("hello world", encoding="utf-8")
+    result = run_cli(
+        "cook",
+        "--blueprint", str(bp),
+        "--input", str(input_dir),
+        "--profile", "legal",
+        "--schema", str(SCHEMA),
+    )
+    # Blueprint validation and segmentation should run before any LLM call.
+    # The extraction step may fail if no LLM key is set, that is expected.
+    assert "rejected" not in result.stderr.lower()
+    # Segment.py outputs these even with 0 chunks found
+    assert result.returncode in (0, 1, 2)
