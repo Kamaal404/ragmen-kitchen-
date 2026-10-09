@@ -49,20 +49,23 @@ def test_unknown_command_is_rejected() -> None:
 def test_toss_accepts_a_valid_approved_blueprint() -> None:
     result = run_cli("toss", str(VALID), "--schema", str(SCHEMA))
     assert result.returncode == 0, result.stderr
-    assert "ok" in result.stdout.lower()
+    all_out = result.stdout + result.stderr
+    assert "ok" in all_out.lower() or "PASS" in all_out
 
 
 def test_toss_rejects_a_hash_mismatch() -> None:
     result = run_cli("toss", str(INVALID), "--schema", str(SCHEMA))
     assert result.returncode == 1
-    assert "blueprint_hash" in result.stderr
+    all_out = result.stdout + result.stderr
+    assert "hash" in all_out.lower()
 
 
 def test_toss_reports_a_missing_file_without_a_traceback(tmp_path: Path) -> None:
     result = run_cli("toss", str(tmp_path / "nope.yaml"), "--schema", str(SCHEMA))
     assert result.returncode == 1
     assert "Traceback" not in result.stderr
-    assert "rejected" in result.stderr
+    all_out = result.stdout + result.stderr
+    assert "FAIL" in all_out or "valid YAML" in all_out
 
 
 @pytest.mark.parametrize("command", ["serve", "taste", "simmer"])
@@ -89,6 +92,22 @@ def test_cook_rejects_bogus_blueprint_path(tmp_path: Path) -> None:
     result = run_cli("cook", "--blueprint", str(tmp_path / "nope.yaml"), "--input", str(tmp_path))
     assert result.returncode == 1
     assert "rejected" in result.stderr
+
+
+def test_toss_verbose_shows_all_checks() -> None:
+    result = run_cli("toss", str(VALID), "--schema", str(SCHEMA), "--verbose")
+    assert result.returncode == 0
+    keys = ["PASS", "schema", "hash", "approval", "version", "communities", "embedding", "workload", "guardrails"]
+    for k in keys:
+        assert k.lower() in (result.stdout + result.stderr).lower()
+
+
+def test_toss_with_firecraft_validates_all_sections() -> None:
+    firecraft = ROOT / "vendor" / "blueprint" / "test-vectors" / "valid" / "firecraft.yaml"
+    result = run_cli("toss", str(firecraft), "--schema", str(SCHEMA), "--verbose")
+    # Firecraft has workload shapes and guardrails that should all pass
+    assert result.returncode == 0, result.stderr
+    assert "PASS" in result.stdout
 
 
 def test_cook_segments_without_llm(tmp_path: Path) -> None:

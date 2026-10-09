@@ -40,7 +40,7 @@ def test_runtime_rejects_unsupported_version(tmp_path: Path) -> None:
     value["blueprint_hash"] = compute_hash(value)
     path = tmp_path / "unsupported.yaml"
     path.write_text(yaml.safe_dump(value), encoding="utf-8")
-    with pytest.raises(ValueError, match="unsupported blueprint version"):
+    with pytest.raises(ValueError, match="supports blueprint spec v1"):
         load(path, SCHEMA)
 
 
@@ -50,5 +50,5 @@ def test_runtime_rejects_known_embedding_dimension_mismatch(tmp_path: Path) -> N
     value["blueprint_hash"] = compute_hash(value)
     path = tmp_path / "wrong-dimensions.yaml"
     path.write_text(yaml.safe_dump(value), encoding="utf-8")
-    with pytest.raises(ValueError, match="embedding dimension mismatch"):
+    with pytest.raises(ValueError, match="produces 384-d vectors"):
         load(path, SCHEMA)

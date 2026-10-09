@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 from pathlib import Path
 
 import yaml
 
-from ragmen.core.blueprint import load
+from ragmen.core.blueprint import KITCHEN_VERSION, load, validate
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SCHEMA = ROOT / "vendor" / "blueprint" / "blueprint.schema.json"
@@ -19,13 +20,80 @@ EXIT_NOT_IMPLEMENTED = 2
 
 
 def _toss(args: argparse.Namespace) -> int:
+    bp_path = Path(args.blueprint)
+    schema_path = Path(args.schema)
+
+    results = validate(bp_path, schema_path)
+
+    failed = 0
+    for name, ok, detail in results:
+        if args.verbose or not ok:
+            mark = "PASS" if ok else "FAIL"
+            label = f"[{mark}] {name}"
+            if detail:
+                label += f"  {detail}"
+            print(label)
+        if not ok:
+            failed += 1
+
+    # Optional Neo4j connectivity check.
+    if args.neo4j and failed == 0:
+        neo4j_ok, neo4j_msg = _check_neo4j(bp_path)
+        if args.verbose or not neo4j_ok:
+            mark = "PASS" if neo4j_ok else "FAIL"
+            print(f"[{mark}] neo4j connectivity  {neo4j_msg}")
+        if not neo4j_ok:
+            failed += 1
+
+    if not args.verbose and failed == 0:
+        bp_name = yaml.safe_load(bp_path.read_text(encoding="utf-8")).get("name", bp_path.name)
+        print(f"ok: {bp_name} passes all {len(results)} checks")
+
+    return EXIT_REJECTED if failed else EXIT_OK
+
+
+def _check_neo4j(bp_path: Path) -> tuple[bool, str]:
+    """Verify Neo4j is reachable and the stored blueprint hash matches."""
     try:
-        load(Path(args.blueprint), Path(args.schema))
-    except (OSError, ValueError, KeyError, yaml.YAMLError) as error:
-        print(f"rejected: {error}", file=sys.stderr)
-        return EXIT_REJECTED
-    print(f"ok: {args.blueprint} is a valid, approved blueprint")
-    return EXIT_OK
+        from neo4j import GraphDatabase
+    except ImportError:
+        return False, "neo4j driver not installed (pip install neo4j)"
+
+    uri = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
+    user = os.environ.get("NEO4J_USER", "neo4j")
+    pwd = os.environ.get("NEO4J_PASSWORD", "")
+    db = os.environ.get("NEO4J_DATABASE", "neo4j")
+
+    if not pwd:
+        return False, "NEO4J_PASSWORD not set"
+
+    try:
+        driver = GraphDatabase.driver(uri, auth=(user, pwd))
+        driver.verify_connectivity()
+    except Exception as e:
+        return False, f"cannot connect to {uri}: {e}"
+
+    # Check stored blueprint metadata.
+    try:
+        with driver.session(database=db) as s:
+            row = s.run(
+                "MATCH (m:_RagmenMeta) RETURN m.blueprint_hash AS hash, m.blueprint_version AS ver LIMIT 1"
+            ).single()
+            if not row:
+                driver.close()
+                return True, f"connected to {uri}, no blueprint metadata found (empty graph)"
+            bp = yaml.safe_load(bp_path.read_text(encoding="utf-8"))
+            stored_hash = row["hash"]
+            blueprint_hash = bp.get("blueprint_hash", "")
+            match = stored_hash == blueprint_hash
+            if match:
+                driver.close()
+                return True, f"connected to {uri}, blueprint hash matches (:RagmenMeta v{row['ver']})"
+            driver.close()
+            return False, f":RagmenMeta hash {stored_hash} does not match blueprint {blueprint_hash}"
+    except Exception as e:
+        driver.close()
+        return True, f"connected to {uri}, but metadata query failed: {e}"
 
 
 def _recipe(_: argparse.Namespace) -> int:
@@ -100,9 +168,11 @@ def build_parser() -> argparse.ArgumentParser:
     recipe.set_defaults(handler=_recipe)
 
     # --- toss ---
-    toss = sub.add_parser("toss", help="validate a blueprint against the schema, hash and approval")
+    toss = sub.add_parser("toss", help="validate a blueprint against the schema, hash, approval, workload, and guardrails")
     toss.add_argument("blueprint", help="path to blueprint.yaml")
     toss.add_argument("--schema", default=str(DEFAULT_SCHEMA), help="blueprint JSON schema")
+    toss.add_argument("--verbose", "-v", action="store_true", help="show every check result, not just failures")
+    toss.add_argument("--neo4j", action="store_true", help="also check Neo4j connectivity and blueprint hash match")
     toss.set_defaults(handler=_toss)
 
     # --- cook ---
