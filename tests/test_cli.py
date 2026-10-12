@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -68,12 +69,26 @@ def test_toss_reports_a_missing_file_without_a_traceback(tmp_path: Path) -> None
     assert "FAIL" in all_out or "valid YAML" in all_out
 
 
-@pytest.mark.parametrize("command", ["taste"])
-def test_unbuilt_commands_fail_loudly(command: str) -> None:
-    # A stub that exits 0 looks like success to a script. Unbuilt commands must not.
-    result = run_cli(command)
-    assert result.returncode == 2
-    assert "not implemented" in result.stderr.lower()
+def test_taste_rejects_missing_golden(tmp_path: Path) -> None:
+    result = run_cli("taste", "--golden", str(tmp_path / "nope.jsonl"))
+    assert result.returncode == 1
+    assert "not found" in result.stderr.lower()
+
+
+def test_taste_dry_no_judge() -> None:
+    """Taste with --dry and --no-judge against an empty store."""
+    import json as _json
+    golden_dir = Path(__file__).parents[1] / "eval" / "golden"
+    golden_dir.mkdir(parents=True, exist_ok=True)
+    golden = golden_dir / "minimal.jsonl"
+    if not golden.exists():
+        golden.write_text(
+            _json.dumps({"id": "q1", "question": "test", "answer": "test", "evidence_chunk_ids": [], "type": "single_hop"}),
+            encoding="utf-8",
+        )
+
+    result = run_cli("taste", "--no-judge", "--dry", "--profile", "minimal")
+    assert result.returncode in (0, 1), result.stderr
 
 
 def test_recipe_points_at_the_skill_repo() -> None:

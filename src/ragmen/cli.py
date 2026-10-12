@@ -209,6 +209,51 @@ def _simmer(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _taste(args: argparse.Namespace) -> int:
+    """Run retrieval evaluation against the golden set."""
+    from ragmen.eval import run_evaluation, save_report
+    from ragmen.store import MemoryStore
+
+    store = MemoryStore()
+    import yaml as _y
+
+    profile = args.profile
+    no_judge = args.no_judge
+
+    golden_path = None
+    if args.golden:
+        golden_path = Path(args.golden)
+        if not golden_path.exists():
+            print(f"golden set not found: {golden_path}", file=sys.stderr)
+            return EXIT_REJECTED
+
+    try:
+        report = run_evaluation(profile, store, no_judge=no_judge, golden_path=golden_path)
+    except FileNotFoundError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return EXIT_REJECTED
+
+    print(report.markdown())
+
+    if not args.dry:
+        md, js = save_report(report)
+        print(f"\nresults written to:\n  {md}\n  {js}")
+
+    # Check thresholds
+    failures = 0
+    for k, v in report.thresholds.items():
+        for sys_name in report.systems_compared:
+            if k.startswith(sys_name):
+                agg = report.aggregate(sys_name)
+                metric = k.replace(sys_name + "_", "")
+                actual = agg.get(metric, agg.get(f"avg_{metric}", 0))
+                if actual < v:
+                    print(f"THRESHOLD FAIL: {k} required={v} actual={actual:.4f}")
+                    failures += 1
+
+    return EXIT_REJECTED if failures else EXIT_OK
+
+
 def _not_built(name: str, _: argparse.Namespace) -> int:
     print(
         f"ragmen {name}: not implemented yet. ",
@@ -257,8 +302,12 @@ def build_parser() -> argparse.ArgumentParser:
     query.set_defaults(handler=_query)
 
     # --- taste ---
-    taste = sub.add_parser("taste", help="evaluate retrieval against the golden set (not yet built)")
-    taste.set_defaults(handler=lambda a: _not_built("taste", a))
+    taste = sub.add_parser("taste", help="evaluate retrieval against the golden set")
+    taste.add_argument("--profile", default="minimal", help="profile name (for file paths)")
+    taste.add_argument("--golden", help="path to golden set JSONL (overrides default)")
+    taste.add_argument("--no-judge", action="store_true", help="skip LLM judge (offline)")
+    taste.add_argument("--dry", action="store_true", help="print results without saving")
+    taste.set_defaults(handler=_taste)
 
     # --- simmer ---
     simmer = sub.add_parser("simmer", help="re-extract after a blueprint change")

@@ -1,0 +1,10 @@
+# CI pass/fail thresholds for retrieval evaluation.
+# Keys: {system}_{metric}, values: minimum acceptable value.
+# ragmen taste --no-judge fails if any metric drops below these.
+minimal:
+  baseline_vector_recall@10: 0.0
+  ragmen_hybrid_recall@10: 0.0
+
+firecraft:
+  baseline_vector_recall@10: 0.30
+  ragmen_hybrid_recall@10: 0.40
