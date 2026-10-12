@@ -2,49 +2,59 @@
 SHELL := /bin/bash
 
 PROFILE ?= legal
-# No default corpus ships with this repository. Point INPUT at documents you own.
 INPUT   ?=
 CHUNKS  ?= chunks.jsonl
 GRAPH   ?= graph.jsonl
 LIMIT   ?= 10
 Q       ?= obligations of the employer
 TOPK    ?= 5
+SCHEMA  ?= vendor/blueprint/blueprint.schema.json
 
-PY := $(shell [ -x .venv/bin/python ] && echo .venv/bin/python || echo python3)
+PY := PYTHONPATH=src $(shell [ -x .venv/bin/python ] && echo .venv/bin/python || echo python3) -m ragmen.cli
 
-# Every target that touches the database or an LLM needs .env loaded.
-define load_env
-set -a; [ -f .env ] && source .env; set +a;
-endef
+set_env = set -a; [ -f .env ] && source .env; set +a;
 
-.PHONY: help setup up down logs shell reset test segment extract dry init load validate query all
+.PHONY: help setup up down logs shell reset test toss cook dry load query validate serve tags
 
 help:
-	@echo "graphrag-builder"
+	@echo "RAGmen Kitchen"
 	@echo ""
-	@echo "  make setup                       one-time VPS bootstrap"
-	@echo "  make test                        offline smoke test (no LLM, no DB)"
+	@echo "  make test                     offline test suite (no LLM, no DB)"
 	@echo ""
-	@echo "  make up / down / logs / shell    Neo4j container"
-	@echo "  make reset                       wipe the database volume"
+	@echo "  make toss     PROFILE=legal   validate an approved blueprint"
+	@echo "  make cook     PROFILE=legal   segment + extract + dry run"
+	@echo "  make load     PROFILE=legal   write extracted graph to Neo4j"
+	@echo "  make query    PROFILE=legal   one-shot cited answer"
+	@echo "  make serve                   start read-only MCP server"
+	@echo "  make validate PROFILE=legal   validate ingested graph"
 	@echo ""
-	@echo "  make extract  INPUT=./pdfs       PDFs -> clean text (optional, segment does it)"
-	@echo "  make segment  PROFILE=legal INPUT=./your-corpus"
-	@echo "  make dry      PROFILE=legal LIMIT=10      extraction preview, writes no DB"
-	@echo "  make init     PROFILE=legal               constraints + indexes"
-	@echo "  make load     PROFILE=legal               write to Neo4j + resolve"
-	@echo "  make validate PROFILE=legal"
-	@echo "  make query    PROFILE=legal Q='...'"
+	@echo "  make up / down / shell        Neo4j container"
 	@echo ""
-	@echo "  make all      PROFILE=legal INPUT=./your-corpus"
-	@echo ""
-	@echo "current: PROFILE=$(PROFILE) INPUT=$(INPUT) PY=$(PY)"
-
-setup:
-	./setup.sh
+	@echo "current: PROFILE=$(PROFILE) INPUT=$(INPUT)"
 
 test:
-	./tests/smoke_test.sh
+	PYTHONPATH=src python -m pytest -q --tb=short -m "not integration"
+
+toss:
+	$(PY) toss vendor/blueprint/test-vectors/valid/minimal.yaml --verbose
+
+cook:
+	@test -n "$(INPUT)" || { echo "set INPUT=/path/to/corpus"; exit 2; }
+	$(PY) cook --profile $(PROFILE) --input $(INPUT) --chunks $(CHUNKS) --graph $(GRAPH) --limit $(LIMIT)
+
+dry: cook
+
+load:
+	@$(set_env) $(PY) cook --profile $(PROFILE) --input $(INPUT) --write
+
+query:
+	$(PY) query --profile $(PROFILE) --top-k $(TOPK) "$(Q)"
+
+serve:
+	$(PY) serve
+
+validate:
+	@$(set_env) $(PY) -c "from ragmen.cook.validate import main; main()"
 
 up:
 	docker compose up -d
@@ -52,46 +62,8 @@ up:
 down:
 	docker compose down
 
-logs:
-	docker compose logs -f neo4j
-
 shell:
-	@$(load_env) docker compose exec neo4j cypher-shell -u $$NEO4J_USER -p $$NEO4J_PASSWORD
+	@$(set_env) docker compose exec neo4j cypher-shell -u $$NEO4J_USER -p $$NEO4J_PASSWORD
 
-# Destroys the volume. The dry-run JSONL reloads without any LLM spend, which is
-# why it is worth keeping around.
 reset:
 	docker compose down -v && docker compose up -d
-
-require_input = @test -n "$(INPUT)" || { echo "set INPUT=/path/to/your/corpus"; exit 2; }
-
-extract:
-	$(require_input)
-	$(PY) src/ragmen/cook/extract_pdf.py --input $(INPUT) --out ./corpus
-
-segment:
-	$(require_input)
-	$(PY) src/ragmen/cook/segment.py --profile $(PROFILE) --input $(INPUT) --out $(CHUNKS)
-
-dry:
-	@$(load_env) $(PY) src/ragmen/cook/build_graph.py --profile $(PROFILE) \
-		--chunks $(CHUNKS) --dry-run --out $(GRAPH) --limit $(LIMIT)
-
-init:
-	@$(load_env) $(PY) src/ragmen/cook/init_db.py --profile $(PROFILE)
-
-load:
-	@$(load_env) $(PY) src/ragmen/cook/build_graph.py --profile $(PROFILE) \
-		--chunks $(CHUNKS) --write
-
-validate:
-	@$(load_env) $(PY) src/ragmen/cook/validate.py --profile $(PROFILE)
-
-query:
-	@$(load_env) $(PY) src/ragmen/cook/query.py --profile $(PROFILE) --q "$(Q)" --top-k $(TOPK)
-
-# Stops after the dry run on purpose. Inspect the extraction before paying to
-# load it; that review is the whole point of the two-phase design.
-all: segment dry
-	@echo ""
-	@echo "Dry run complete. Inspect $(GRAPH), then:  make init load validate"
