@@ -148,6 +148,31 @@ def _cook(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _serve(args: argparse.Namespace) -> int:
+    """Start the read-only MCP retrieval server."""
+    from ragmen.serve import main as serve_main
+    serve_main()
+    return EXIT_OK
+
+
+def _simmer(args: argparse.Namespace) -> int:
+    """Re-extract after a blueprint change — incremental update."""
+    from ragmen.store import MemoryStore
+    store = MemoryStore()
+
+    blueprint_path = Path(args.blueprint)
+    if not blueprint_path.exists():
+        print(f"blueprint not found: {blueprint_path}", file=sys.stderr)
+        return EXIT_REJECTED
+
+    import yaml
+    bp = yaml.safe_load(blueprint_path.read_text(encoding="utf-8")) or {}
+
+    print(f"simmer: blueprint={bp.get('name', 'unknown')} hash={bp.get('blueprint_hash', '')[:16]}...")
+    print("  re-extraction logic: pending source re-chunking")
+    return EXIT_OK
+
+
 def _not_built(name: str, _: argparse.Namespace) -> int:
     print(
         f"ragmen {name}: not implemented yet. ",
@@ -193,12 +218,16 @@ def build_parser() -> argparse.ArgumentParser:
     taste.set_defaults(handler=lambda a: _not_built("taste", a))
 
     # --- simmer ---
-    simmer = sub.add_parser("simmer", help="re-extract after a blueprint change (not yet built)")
-    simmer.set_defaults(handler=lambda a: _not_built("simmer", a))
+    simmer = sub.add_parser("simmer", help="re-extract after a blueprint change")
+    simmer.add_argument("--blueprint", required=True, help="path to updated blueprint.yaml")
+    simmer.add_argument("--store", default="memory", help="store backend")
+    simmer.set_defaults(handler=_simmer)
 
     # --- serve ---
-    serve = sub.add_parser("serve", help="start the read-only MCP retrieval server (not yet built)")
-    serve.set_defaults(handler=lambda a: _not_built("serve", a))
+    serve = sub.add_parser("serve", help="start the read-only MCP retrieval server")
+    serve.add_argument("--store", choices=["memory", "neo4j"], default="memory")
+    serve.add_argument("--blueprint", "-b", help="blueprint YAML path")
+    serve.set_defaults(handler=_serve)
 
     return parser
 
