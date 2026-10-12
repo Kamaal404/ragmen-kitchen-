@@ -186,8 +186,8 @@ def _query(args: argparse.Namespace) -> int:
 
 def _serve(args: argparse.Namespace) -> int:
     """Start the read-only MCP retrieval server."""
-    from ragmen.serve import main as serve_main
-    serve_main()
+    from ragmen.serve.mcp import start_server
+    start_server(store_backend=args.store, blueprint_path=args.blueprint)
     return EXIT_OK
 
 

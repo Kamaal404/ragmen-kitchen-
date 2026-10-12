@@ -108,23 +108,32 @@ def create_server(store: Any, blueprint: dict | None = None) -> Server:
     return app
 
 
+def start_server(store_backend: str = "memory", blueprint_path: str | None = None) -> None:
+    """Start the MCP server with stdio transport.
+
+    Args:
+        store_backend: "memory" or "neo4j"
+        blueprint_path: Optional path to blueprint.yaml for ontology context
+    """
+    bp = _load_blueprint(blueprint_path)
+    from ragmen.store import MemoryStore
+    store = MemoryStore()
+
+    app = create_server(store, bp)
+    print(f"RAGmen Serve starting (store={store_backend})", file=sys.stderr)
+
+    import asyncio
+    from mcp.server.stdio import stdio_server
+    asyncio.run(stdio_server(app))
+
+
 def main() -> None:
     import argparse
     ap = argparse.ArgumentParser(description="RAGmen Serve MCP server")
     ap.add_argument("--store", choices=["memory", "neo4j"], default="memory")
     ap.add_argument("--blueprint", "-b", help="Blueprint YAML path")
     args = ap.parse_args()
-
-    bp = _load_blueprint(args.blueprint)
-    from ragmen.store import MemoryStore
-    store = MemoryStore()
-
-    app = create_server(store, bp)
-    print(f"RAGmen Serve starting (store={args.store})", file=sys.stderr)
-
-    import asyncio
-    from mcp.server.stdio import stdio_server
-    asyncio.run(stdio_server(app))
+    start_server(args.store, args.blueprint)
 
 
 if __name__ == "__main__":
