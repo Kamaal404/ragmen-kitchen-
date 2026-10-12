@@ -27,11 +27,11 @@ Plain RAG returns chunks. GraphRAG returns relationships. But schema design is t
 | Kitchen term | What it does | Status |
 |---|---|---|
 | **recipe** | Design and sign off a blueprint from a corpus sample | 🟢 working (in ragmen-recipe) |
-| **toss** | Validate blueprint schema, hash, and approval | 🟡 partial |
-| **cook** | Chunk, extract, embed, load into Neo4j | 🟡 partial |
-| **simmer** | Entity resolution, incremental updates, drift reporting | ⚪ planned |
+| **toss** | Validate blueprint schema, hash, and approval | 🟢 working |
+| **cook** | Chunk, extract, embed, load into Neo4j | 🟢 working |
+| **simmer** | Entity resolution, incremental updates, drift reporting | 🟢 working |
 | **taste** | Golden-set evaluation with recall@k in CI | ⚪ planned |
-| **serve** | Read-only MCP server with hybrid retrieval and citations | ⚪ planned |
+| **serve** | Read-only MCP server with hybrid retrieval and citations | 🟢 working |
 
 ## How it fits together
 
@@ -110,19 +110,44 @@ This repository ships no corpus. Bring your own documents:
 
 Do not commit source documents, API keys, or Neo4j data. The bundled test fixtures are hand-written and exist only to test the pipeline.
 
+## Modules
+
+Kitchen is organised into composable, domain-agnostic modules:
+
+| Module | What it does |
+|---|---|
+| `ragmen.registry` | Source registry, chunk store, ingest job ledger, embedding cache |
+| `ragmen.cook` | Corpus ingestion: segment, extract, build graph, query, validate |
+| `ragmen.core` | Blueprint loading, validation, schema helpers |
+| `ragmen.loaders` | Source file loaders (HTML, PDF) |
+| `ragmen.resolve` | Entity resolution against blueprint vocabularies (exact, fuzzy, embedding, LLM tiers) |
+| `ragmen.embed` | Vector embedding with content-hash caching (mock, local sentence-transformers) |
+| `ragmen.report` | Drift report — unmapped mentions, pattern violations, vocabulary misses, hub candidates |
+| `ragmen.store` | Abstract GraphStore interface + MemoryStore for offline testing |
+| `ragmen.serve` | Read-only MCP server with hybrid search (vector + fulltext + graph traversal), citation, path explanation, schema introspection |
+| `ragmen.conflict` | Cross-source assertion conflict detection |
+| `ragmen.agent` | Answer policy engine — cited answers, conflict surfacing, corpus-scoped refusal |
+
 ## Roadmap
 
-- [x] Source registry with content hashing, so re-adding a file is a no-op
+### Built
+- [x] Source registry with content hashing, re-add is a no-op
 - [x] Retraction that removes one source's chunks and keeps entities other sources share
 - [x] Resumable ingestion from a per-chunk job ledger
 - [x] Embedding cache keyed by model and text
-- [ ] `ragmen` CLI subcommands (currently a stub)
-- [ ] Prompt caching for the blueprint block sent with every chunk
-- [ ] Batch extraction mode for cheaper, non-urgent runs
-- [ ] Read-only MCP server (`serve`) with hybrid search and citations
+- [x] Entity resolution (exact + fuzzy against blueprint vocabulary)
+- [x] Drift report (unmapped mentions, pattern violations, vocab misses, hub candidates)
+- [x] Abstract GraphStore interface (MemoryStore + Neo4j adapter)
+- [x] MCP server with search, expand, cite, explain_path, schema tools
+- [x] Answer policy engine with citation, conflict surfacing, out-of-corpus refusal
+- [x] Conflict detection across multiple sources
+- [x] Scoped incremental re-resolution (only re-resolve changed entities)
+- [x] Drift threshold enforcement
+
+### Planned
 - [ ] Golden-set evaluation (`taste`) with recall@k in CI
-- [ ] Drift report that flags when the blueprint no longer fits the corpus
-- [ ] Multi-source conflict handling (show both sides with attribution)
+- [ ] Batch extraction mode for cheaper runs
+- [ ] Prompt caching for the blueprint block sent with every chunk
 
 The migrated ingestion files under `src/ragmen/cook` originate from commit `948b4e4` of the former `graphrag-builder` repository. The Fire Graph material is an integration-test fixture, not a product.
 
