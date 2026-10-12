@@ -33,7 +33,7 @@ help:
 	@echo "current: PROFILE=$(PROFILE) INPUT=$(INPUT)"
 
 test:
-	PYTHONPATH=src python -m pytest -q --tb=short -m "not integration"
+	PYTHONPATH=src python -m pytest -q --tb=short -W ignore::DeprecationWarning -m "not integration"
 
 toss:
 	$(PY) toss vendor/blueprint/test-vectors/valid/minimal.yaml --verbose
