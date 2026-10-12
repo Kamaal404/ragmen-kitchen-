@@ -148,6 +148,42 @@ def _cook(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _query(args: argparse.Namespace) -> int:
+    """One-shot cited answer from the corpus."""
+    profile_path = Path(args.profile)
+    if not profile_path.exists():
+        from ragmen.cook.common import load_profile as _lp
+        try:
+            profile = _lp(args.profile)
+        except SystemExit:
+            print(f"profile not found: {args.profile}", file=sys.stderr)
+            return EXIT_REJECTED
+    else:
+        import yaml as _y
+        profile = _y.safe_load(profile_path.read_text(encoding="utf-8")) or {}
+
+    from ragmen.store import MemoryStore
+    from ragmen.serve.retrievers import HybridRetriever
+
+    store = MemoryStore()
+    retriever = HybridRetriever(store)
+    result = retriever.retrieve(args.question, top_k=args.top_k, hops=1)
+
+    if not result.hits:
+        print("No relevant information found in the corpus.")
+        return EXIT_OK
+
+    for i, hit in enumerate(result.hits[:args.top_k]):
+        print(f"[{i+1}] score={hit.score}")
+        print(f"    source: {hit.source_id or 'unknown'}  path: {hit.path}")
+        if hit.page:
+            print(f"    page: {hit.page}")
+        print(f"    {hit.text[:300]}")
+        print()
+
+    return EXIT_OK
+
+
 def _serve(args: argparse.Namespace) -> int:
     """Start the read-only MCP retrieval server."""
     from ragmen.serve import main as serve_main
@@ -212,6 +248,13 @@ def build_parser() -> argparse.ArgumentParser:
     cook.add_argument("--limit", type=int, default=0, help="stop after N chunks")
     cook.add_argument("--strict", action="store_true", help="fail on first extraction error")
     cook.set_defaults(handler=_cook)
+
+    # --- query ---
+    query = sub.add_parser("query", help="one-shot cited answer from the corpus")
+    query.add_argument("--profile", required=True, help="profile name or path")
+    query.add_argument("--top-k", type=int, default=5, help="number of results")
+    query.add_argument("question", help="natural language question")
+    query.set_defaults(handler=_query)
 
     # --- taste ---
     taste = sub.add_parser("taste", help="evaluate retrieval against the golden set (not yet built)")
